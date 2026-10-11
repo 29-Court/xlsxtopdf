@@ -890,6 +890,14 @@ async function sheetsToPdf(sheets, meta, env){
   var FOOTR = (meta.footer === 'none') ? 0 : FOOT;
   var forceOrient = String(meta.orientation || 'auto').toLowerCase();
   if (forceOrient !== 'portrait' && forceOrient !== 'landscape') forceOrient = 'auto';
+  /* ---- default grid chrome (Victor's BOMA report style) ----
+   * Thick black outer border on the table edge, thin black inner gridlines
+   * on every cell, bold subtotal/total rows with top+bottom rules. This is
+   * the converter's default chrome (pass defaultGrid:false to disable).
+   * The workbook's own explicit cell borders always draw on top. */
+  var useDefaultGrid = meta.defaultGrid !== false;
+  var GRID_THIN = 0.5, GRID_THICK = 2, GRID_RULE = 1.5;
+  var SUBTOTAL_RE = /\bsub-?total\b/i;
   var d = await PDF.doc(), F0 = await PDF.loadFonts(d);
   /* Per-document font set: loadFonts caches at module level, so clone
    * before attaching the CJK font — otherwise cjk leaks into the cache
@@ -1082,6 +1090,56 @@ async function sheetsToPdf(sheets, meta, env){
           y = drawSheetHeader(page, PDFLib, F, tileName + ' (continued)', rows.length, (tile.c1 - tile.c0 + 1), y, PW, MG);
         }
         tile.rowPos[ri] = { page: page, yTop: y };
+        /* Default grid chrome for this row (see useDefaultGrid above):
+         * thin inner gridlines on every visual cell rect (merge owners use
+         * their span rect; covered cells are skipped so no lines cross a
+         * merge), thick outer border on the table's true edges, bold text +
+         * top/bottom rules on subtotal/total rows. Drawn before cell fills
+         * so fills and explicit borders sit on top. */
+        var defGridSubtotal = false;
+        if (useDefaultGrid){
+          /* Subtotal/total detection: the row's first non-empty cell names
+           * it ("19700 Subtotal", "Total"). First-cell matching avoids
+           * false positives like "Top FY total" in a description column. */
+          var _rt = '', _rrow = rows[ri] || [];
+          for (var _rti = 0; _rti < _rrow.length; _rti++){
+            var _rtc = _rrow[_rti];
+            if (_rtc && _rtc.t != null && String(_rtc.t).trim() !== ''){ _rt = String(_rtc.t); break; }
+          }
+          defGridSubtotal = SUBTOTAL_RE.test(_rt);
+          var _gcol = PDFLib.rgb(0, 0, 0);
+          var _tileL = colX[0];
+          var _tileR = colX[colX.length - 1] + colWpt[tile.c1] * k;
+          for (var _gj = tile.c0; _gj <= tile.c1; _gj++){
+            var _gcell = (rows[ri] || [])[_gj];
+            if (_gcell && _gcell.skip) continue; /* covered by a merge */
+            var _gw, _gh;
+            if (_gcell){
+              var _gmr0 = mergedRect(ri, _gj);
+              _gw = _gmr0 ? _gmr0.w : colWpt[_gj] * k;
+              _gh = _gmr0 ? _gmr0.h : rh;
+            } else { /* empty cell: single-cell rect so the grid stays continuous */
+              _gw = colWpt[_gj] * k; _gh = rh;
+            }
+            var _gx = colX[_gj - tile.c0], _gyT = y, _gyB = y - _gh;
+            page.drawLine({ start: { x: _gx, y: _gyT }, end: { x: _gx + _gw, y: _gyT }, thickness: GRID_THIN, color: _gcol });
+            page.drawLine({ start: { x: _gx, y: _gyB }, end: { x: _gx + _gw, y: _gyB }, thickness: GRID_THIN, color: _gcol });
+            page.drawLine({ start: { x: _gx, y: _gyB }, end: { x: _gx, y: _gyT }, thickness: GRID_THIN, color: _gcol });
+            page.drawLine({ start: { x: _gx + _gw, y: _gyB }, end: { x: _gx + _gw, y: _gyT }, thickness: GRID_THIN, color: _gcol });
+          }
+          if (ri === 0)
+            page.drawLine({ start: { x: _tileL, y: y }, end: { x: _tileR, y: y }, thickness: GRID_THICK, color: _gcol });
+          if (ri === rows.length - 1)
+            page.drawLine({ start: { x: _tileL, y: y - rh }, end: { x: _tileR, y: y - rh }, thickness: GRID_THICK, color: _gcol });
+          if (tile.c0 === 0)
+            page.drawLine({ start: { x: _tileL, y: y }, end: { x: _tileL, y: y - rh }, thickness: GRID_THICK, color: _gcol });
+          if (tile.c1 === ncols - 1)
+            page.drawLine({ start: { x: _tileR, y: y }, end: { x: _tileR, y: y - rh }, thickness: GRID_THICK, color: _gcol });
+          if (defGridSubtotal){
+            page.drawLine({ start: { x: _tileL, y: y }, end: { x: _tileR, y: y }, thickness: GRID_RULE, color: _gcol });
+            page.drawLine({ start: { x: _tileL, y: y - rh }, end: { x: _tileR, y: y - rh }, thickness: GRID_RULE, color: _gcol });
+          }
+        }
         /* Embedded images anchored at this row, inside this tile's columns. */
         (s.images || []).forEach(function(img){
           if (!img.embedded || img.r0 !== ri || img.c0 < tile.c0 || img.c0 > tile.c1) return;
@@ -1132,7 +1190,14 @@ async function sheetsToPdf(sheets, meta, env){
             var tw = runWidth(F, cf, ct, (cf.size || 11) * k);
             if (tw > cw) clip = overflowClip(rows, ri, cj, tile, colWpt, k, cell, tw, cx, cw);
           }
+          /* Subtotal/total rows render bold under the default grid chrome. */
+          var _sfont = null;
+          if (defGridSubtotal && cell.font && !cell.font.bold){
+            _sfont = cell.font;
+            cell.font = Object.assign({}, _sfont, { bold: true });
+          }
           drawCellText(page, PDFLib, PDF, F, cell, cx, yBot, cw, ch, k, clip);
+          if (_sfont) cell.font = _sfont;
         }
         y -= rh;
       }
@@ -1152,15 +1217,29 @@ async function sheetsToPdf(sheets, meta, env){
           if (!rp) return;
           var kk = owner.k, rH = owner.rowH, cX = owner.colX;
           var chx = cX[a.c0 - owner.c0];
-          var chw = 0;
-          for (var cc = a.c0; cc < a.c1 && cc < colWpt.length; cc++)
+          /* Prefer the anchor's EMU extents (oneCellAnchor) for the draw size:
+           * empty anchor rows can be paper-thin, which used to shrink charts
+           * to nothing. Fall back to row/column sums for twoCellAnchor. */
+          var chw = (a.wPt > 0) ? a.wPt * kk : 0;
+          if (!chw) for (var cc = a.c0; cc < a.c1 && cc < colWpt.length; cc++)
             chw += colWpt[cc] * kk;
           chw = Math.min(chw, (PW - MG.r) - chx); /* clamp to page */
-          var chh = 0;
-          for (var cr = a.r0; cr < a.r1 && cr < rH.length; cr++) chh += rH[cr];
-          chh = Math.min(chh, rp.yTop - (MG.b + FOOTR)); /* clamp to page */
+          var chh = (a.hPt > 0) ? a.hPt * kk : 0;
+          if (!chh) for (var cr = a.r0; cr < a.r1 && cr < rH.length; cr++) chh += rH[cr];
+          /* If the chart doesn't fit in the space below its anchor row,
+           * draw it at the top of its anchor rows on the following page
+           * (below that page's sheet header), not clipped into the footer. */
+          var drawPage = rp.page, drawY = rp.yTop;
+          if (chh > rp.yTop - (MG.b + FOOTR)){
+            for (var rr2 = a.r0 + 1; rr2 <= a.r1 && rr2 < rH.length; rr2++){
+              var rp2 = owner.rowPos[rr2];
+              if (rp2 && rp2.page !== rp.page){ drawPage = rp2.page; drawY = rp2.yTop; break; }
+            }
+          }
+          chw = Math.min(chw, (PW - MG.r) - chx); /* clamp to page */
+          chh = Math.min(chh, drawY - (MG.b + FOOTR)); /* clamp to page */
           if (chw > 40 && chh > 40)
-            XlsxCharts.drawChart(rp.page, PDFLib, F, ch, chx, rp.yTop, chw, chh);
+            XlsxCharts.drawChart(drawPage, PDFLib, F, ch, chx, drawY, chw, chh);
         } catch(e){}
       });
     }
