@@ -34,12 +34,6 @@ An xlsx is a zip of XML. This library unzips it, reads every cell and style, **e
 
 The same code runs in Node, in a browser tab (via bundler), and in AWS Lambda. Bytes in, bytes out.
 
-## Install
-
-```sh
-npm install @29court/xlsxtopdf
-```
-
 ## Zero-NPM install
 
 No npm. No `npx`. And definitely not a yolo-curl-pipe-to-bash. Grab the bundle directly — plain files you can read, dependencies vendored, integrity-checked:
@@ -63,15 +57,13 @@ Every bundle is published with its sha256 at https://registry.29court.com. Verif
 ## Use
 
 ```js
-const { xlsxToPdf } = require("@29court/xlsxtopdf");
-// or: import { xlsxToPdf } from "@29court/xlsxtopdf";
-
-const fs = require("fs");
+import { xlsxToPdf } from "./xlsx-to-pdf/nodepdf.js";
+import { readFileSync, writeFileSync } from "node:fs";
 
 async function main() {
-  const xlsx = fs.readFileSync("model.xlsx");
+  const xlsx = readFileSync("model.xlsx");
   const pdf = await xlsxToPdf(xlsx, { filename: "model.xlsx" });
-  fs.writeFileSync("model.pdf", pdf); // pdf is a Uint8Array
+  writeFileSync("model.pdf", pdf); // pdf is a Uint8Array
 }
 main();
 ```
@@ -185,7 +177,9 @@ Failures are honest Errors, never silent garbage: DNS/connection failure
 Lower-level API for advanced use:
 
 ```js
-const { parseWorkbook, renderPdf } = require("@29court/xlsxtopdf");
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { parseWorkbook, renderPdf } = require("./xlsx-to-pdf/src/index.cjs");
 
 const { sheets, stats } = await parseWorkbook(xlsxBytes);
 // stats.evaluated: formulas calculated on-device
@@ -200,7 +194,7 @@ S3 event in, PDF in S3 out. No headless browser, no LibreOffice binary, no WASM 
 ```js
 // handler.mjs — Node 18+ ESM Lambda, S3 trigger
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { xlsxToPdf } from "@29court/xlsxtopdf";
+import { xlsxToPdf } from "./xlsx-to-pdf/nodepdf.js";
 
 const s3 = new S3Client({});
 const streamToBytes = async (stream) =>
