@@ -1,0 +1,48 @@
+{
+  "author": "29Court",
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "exceljs": "^4.4.0",
+    "fast-formula-parser": "^1.0.19",
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1",
+    "xlsx": "^0.18.5"
+  },
+  "description": "XLSX to beautiful PDF in pure JavaScript. Evaluates uncached formulas on-device, typesets wide sheets, draws the PDF directly. No browser, no server, no native code. Runs in Node, browsers, and AWS Lambda.",
+  "engines": {
+    "node": ">=16"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs",
+      "require": "./src/index.cjs",
+      "default": "./src/index.cjs"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "homepage": "https://29court.com",
+  "keywords": [
+    "xlsx",
+    "excel",
+    "pdf",
+    "converter",
+    "spreadsheet",
+    "lambda",
+    "serverless",
+    "formulas"
+  ],
+  "license": "MIT",
+  "main": "src/index.cjs",
+  "name": "@29court/xlsxtopdf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valgaze/29court-brains.git"
+  },
+  "types": "src/index.d.ts",
+  "version": "0.2.0"
+}
