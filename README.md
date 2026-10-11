@@ -40,6 +40,26 @@ The same code runs in Node, in a browser tab (via bundler), and in AWS Lambda. B
 npm install @29court/xlsxtopdf
 ```
 
+## Zero-NPM install
+
+No npm. No `npx`. And definitely not a yolo-curl-pipe-to-bash. Grab the bundle directly — plain files you can read, dependencies vendored, integrity-checked:
+
+```sh
+curl -O https://xlsxpdfsolved.29court.com/bundle_d6120c522957.zip
+echo "d6120c522957200830edff113c90929e829aadce3c70d3099d5ce9dff88698be  bundle_d6120c522957.zip" | sha256sum -c
+unzip bundle_d6120c522957.zip
+node xlsx-to-pdf/cli.js xlsx-to-pdf/sample.xlsx output.pdf
+```
+
+Or use it as a library — one import, does the rad shit:
+
+```js
+import { xlsxsuper } from './xlsx-to-pdf/nodepdf.js'
+const pdf = await xlsxsuper.convert(xlsxBytes)   // xlsx -> PDF bytes
+```
+
+Every bundle is published with its sha256 at https://registry.29court.com. Verify before you unzip.
+
 ## Use
 
 ```js
