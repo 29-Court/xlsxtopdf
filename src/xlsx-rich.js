@@ -772,8 +772,59 @@ function printHFRaw(ws){
   } catch(e){ return null; }
 }
 
+/* DrawingML namespace repair for ExcelJS.
+ *
+ * openpyxl (and some other writers) emit drawing XML with an UNPREFIXED
+ * default namespace:
+ *   <wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">
+ * ExcelJS's DrawingXform only recognizes the prefixed root (xdr:wsDr), so the
+ * unrecognized root leaves its parse model undefined and the whole workbook
+ * load dies with "Cannot read properties of undefined (reading 'anchors')".
+ * That single throw used to knock chart-bearing workbooks into the degraded
+ * basic reader (no styling, blank formulas).
+ *
+ * Fix: rewrite the drawing parts in the zip copy we hand to ExcelJS, adding
+ * the xdr: prefix to every unprefixed drawing element. Charts are unaffected:
+ * our own DrawingML parser (xlsx-charts.js) strips namespaces itself, and
+ * image anchors come from ExcelJS's repaired model. Already-prefixed files
+ * (Excel-authored) pass through byte-identical. Never throws; returns the
+ * original buffer when nothing needed repair. */
+var DRAWING_NS_URI = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';
+async function repairDrawingNamespaces(JSZip, buf){
+  var zip;
+  try { zip = await JSZip.loadAsync(buf); }
+  catch(e){ return buf; }
+  var names = Object.keys(zip.files).filter(function(n){
+    return /^xl\/drawings\/drawing\d+\.xml$/.test(n);
+  });
+  var changed = false;
+  for (var i = 0; i < names.length; i++){
+    var f = zip.file(names[i]);
+    if (!f) continue;
+    var xml;
+    try { xml = await f.async('string'); } catch(e){ continue; }
+    if (/<xdr:wsDr[\s>]/.test(xml)) continue; /* Excel-authored: already fine */
+    if (!/<wsDr[\s>]/.test(xml)) continue;    /* not a drawing root we know */
+    /* Prefix every unprefixed element; a:/c:/r: prefixed ones are skipped
+     * by the negative lookahead (their name is followed by ':'). */
+    var fixed = xml.replace(/<(\/?)(?![A-Za-z][\w.-]*:)([A-Za-z][\w.-]*)(?=[\s/>])/g, '<$1xdr:$2');
+    /* Move the default drawingml namespace onto the xdr prefix. */
+    fixed = fixed.split('xmlns="' + DRAWING_NS_URI + '"').join('xmlns:xdr="' + DRAWING_NS_URI + '"');
+    if (fixed !== xml){ zip.file(names[i], fixed); changed = true; }
+  }
+  if (!changed) return buf;
+  try {
+    var out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    return out;
+  } catch(e){ return buf; }
+}
+
 async function readViaExcelJS(buf, mode, deps){
   var ExcelJS = deps.ExcelJS, XLSX = deps.XLSX;
+  /* Repair openpyxl-style unprefixed DrawingML before ExcelJS sees it. */
+  if (deps.JSZip){
+    try { buf = await repairDrawingNamespaces(deps.JSZip, buf); } catch(e){}
+  }
   var wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf);
   var theme = themeFromWorkbook(wb);
