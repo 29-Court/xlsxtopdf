@@ -121,7 +121,8 @@ async function renderPdf(sheets, options) {
     footerStyle: options.footerStyle,
     useWorkbookHeaders: options.useWorkbookHeaders,
     includeSheets: options.includeSheets,
-    sheetOrder: options.sheetOrder
+    sheetOrder: options.sheetOrder,
+    defaultGrid: options.defaultGrid
   }, { PDFLib: PDFLib, PDF: PdfKit, fontkit: fontkit,
        XlsxCharts: XlsxCharts, cjkFontBytes: options.cjkFontBytes });
   return pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
