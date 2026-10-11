@@ -183,7 +183,8 @@ function parseAnchors(xml){
       var wPt = (+em[1]) * 72 / 914400, hPt = (+em[2]) * 72 / 914400;
       out.push({ c0: from.c, r0: from.r,
         c1: from.c + Math.max(1, Math.round(wPt / 64)),
-        r1: from.r + Math.max(1, Math.round(hPt / 15)), relId: cm[1] });
+        r1: from.r + Math.max(1, Math.round(hPt / 15)),
+        wPt: wPt, hPt: hPt, relId: cm[1] });
     }
   }
   var re = /<twoCellAnchor>([\s\S]*?)<\/twoCellAnchor>/g, m;
